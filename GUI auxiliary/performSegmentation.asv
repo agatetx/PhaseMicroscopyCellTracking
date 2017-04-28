@@ -1,0 +1,69 @@
+function [snake] = performSegmentation(Im, snake, nextAvailTag, handles, cropFactor, iterations, curFigData, edgeSuppresion)
+%     
+% [snake] = performSegmentation(Im, snake, nextAvailTag, handles, cropFactor,...
+%                     iterations, curFigData, displayGraphics, edgeSuppresion)
+% 
+% This function crops the image acording to the given snake and calls GVFsnakeForFullImage,
+% which preform th segmentation,the segmentation is preform in two stages acording to 
+% the user request.
+% 
+% Input:
+%     Im - the current frame the snake referres to. 
+%     snake - initial snake
+%     nextAvailTag -  index to next available index in snake
+%     handles - standarts GUI handles array.  
+%     cropFactor - the ratio between snake bounding box and croping box.
+%                                 should be > 1.
+%     iterations - the number of iteration for the sementation. 
+%     curFigData - contains information regardig plot demanded by GUI.
+%     edgeSuppresion - a variable defining the amount of suppresion on the
+%                                           detected edges in the image - good for noise reduction.
+%     
+% Output:
+%    snake - final snake after full segmentation procedure
+
+displayGraphics = get(handles.checkboxDisplayGraphics,'Value');
+
+[ImCrop xmin ymin] = crop_cell(Im, snake, cropFactor);
+
+snake(:,1) = snake(:,1) - xmin;
+snake(:,2) = snake(:,2) - ymin;
+
+if (get(handles.popupmenuMethod,'Value')~=3)
+    set(curFigData.status_handle,'String', 'Segmenting - stage 1');
+    [snake, nextAvailTag] = GVFsnakeForFullImage(ImCrop, snake, nextAvailTag, handles, curFigData, ...
+        'displayGraphics', displayGraphics, 'iterations', iterations, 'edgeSuppresion', edgeSuppresion);
+end
+temp_mask = roipoly(ImCrop, snake(:,1), snake(:,2));
+SDM = bwdist(temp_mask) - bwdist(~temp_mask);
+
+SDMx = dx5tap(SDM);
+SDMy = dy5tap(SDM);
+%        figure; quiver(imresize(SDMx,0.2), imresize(SDMy, 0.2));
+%	sigmaH = 1; sigmaLP = 2.5/2;
+% sigmaH = 4; sigmaLP =10;
+    filterScale = sqrt((max(snake(:,1))-min(snake(:,1)))*(max(snake(:,2))-min(snake(:,2))))/1000;
+	sigmaH = 4*filterScale; sigmaLP = 10*filterScale;
+  bpKernel = fspecial('gaussian', 2 * ceil(3 * sigmaLP), sigmaH) - ...
+             0.8 * fspecial('gaussian', 2 * ceil(3 * sigmaLP), sigmaLP);
+  ImCropFilt = imfilter(ImCrop, bpKernel, 'symmetric', 'same', 'conv');       
+Ix = dx5tap(ImCropFilt);
+Iy = dy5tap(ImCropFilt);
+%        figure;  quiver(imresize(Ix,1), imresize(Iy, 1));
+temp = SDMx.*Ix + SDMy.*Iy;
+
+%         figure; imshow(temp.*(temp>0),[]);
+if (get(handles.popupmenuMethod,'Value')~=2)
+    set(curFigData.status_handle,'String', 'Segmenting - stage 2');
+    [snake, nextAvailTag] = GVFsnakeForFullImage(ImCrop,snake, nextAvailTag, handles, curFigData, ...
+        'displayGraphics', displayGraphics, 'iterations', iterations,'reEdgeMap', temp.*(temp>max(temp(:))/13), 'edgeSuppresion', edgeSuppresion);
+end
+snake(:,1) = snake(:,1) + xmin;
+snake(:,2) = snake(:,2) + ymin;
+
+%     % dilate the mask before using it as initial snake for next image
+%     mask = imdilate(logical(mask), strel('disk',dilatePixels) );
+%     snake = contour(mask, [0 0]);
+%     snake = snake(:,2:end-1)';
+%     snake(:,3) =  1:length(snake);
+end

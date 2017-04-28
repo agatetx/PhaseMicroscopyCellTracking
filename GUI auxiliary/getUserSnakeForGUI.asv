@@ -1,0 +1,39 @@
+function [snake, nextAvailTag] = getUserSnakeForGUI(im)
+
+[snake, nextAvailTag] = getUserSnake(im)
+
+Presents the user with an image, and has them create an initial
+snake for that image by adding vertices with the mouse (left
+clicks add new vertices, each connected to the previous one; other
+clicks or key presses end the process; the last added vertex is
+connected to the first added vertex)
+
+  im              image to present user
+
+  snake           snake created by user
+
+  nextAvailTag    next available unique vertex tag
+
+
+
+scim = imadjust(im, stretchlim(im, 0));
+
+CLim = stretchlim(scim, [0 0.98])';
+
+h = imshow(scim, CLim); title('Specify initial snake');
+
+
+[x,y] = getline('closed');
+
+ppoints = [x, y];
+userSnake = ppoints(1:(end-1),:);
+
+hold on;
+plot(ppoints(:,1), ppoints(:,2), '-+');
+hold off; drawnow;
+CLim = get(gca, 'CLim');
+
+numPoints = size(userSnake, 1);
+tags = [1:numPoints];
+nextAvailTag = numPoints + 1;
+snake = [userSnake tags'];

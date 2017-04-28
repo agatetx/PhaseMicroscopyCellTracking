@@ -1,0 +1,167 @@
+function [rotAngle, displacement] = findRotationTranslationForGUI(im0, mask, im1, center, bandpassF, sisLower, sisUpper, curFigData, varargin)
+% 
+%  [rotAngle, displacement] = findRotationTranslationForGUI(im0, mask, im1, 
+%                                                                 center, bandpassF, sisLower, sisUpper, 
+%                                                                     curFigData, varargin)
+%                                                                     
+% A tracking function modified from Cyrus's code.
+% This function finds the location and orientation of 
+% the masked  im0 object in image im1.
+% 
+% input: 
+%     im0 - source image
+%     mask - a mask to be applied to im0
+%     im1 - the image inside which we will search for the  object
+%     center - the center coordinates of the object for rotation calculation
+%     bandpassF - a lowpass to be applied before correlation calculations
+%     sisLower, sisUpper - upper and lower limits for sigmodial intensity scaling
+%     curFigData - contains information regarding plots demanded by GUI
+%     options can contain:
+%             displayGraphics - if set to 1, show auxilary graphics
+%             windowing - if desired to apply hann window to im1 - currently not in use
+%
+% output:
+%     rotAngle - the resulting rotation angle of the object
+%     displacement - the resulting displacement of the object
+%     
+
+
+if exist('varargin', 'var')
+  assignVars(varargin); %parse optional variables
+end
+
+% set defaults
+if ~exist('displayGraphics', 'var')
+  displayGraphics = 0;
+end
+
+
+% perform sigmoidal intensity scaling
+im0 = isis(im0, sisLower, sisUpper);
+im1 = isis(im1, sisLower, sisUpper);
+[ySize, xSize] = size(im0);
+
+% generate template image by applying mask to im0
+[maskedim0, bgColor] = maskSelectionSubtract(im0, mask);
+
+% if desired, window im1
+if exist('windowing', 'var')
+  windowedim1 = hannWindow(im1 - bgColor);
+else
+  windowedim1 = im1 - bgColor;
+end
+
+%% First  correlation block to find coarse translation index
+
+lowpassF = bandpassF;
+product = (fft2(windowedim1) .* lowpassF) .* ...
+          conj(fft2(ifftshift(maskedim0)) .* lowpassF);
+correlation = real(ifft2(product));
+thresh3 = max(max(correlation));
+
+[peakr, peakc] = find(correlation == thresh3);
+displacement = [peakc(1), peakr(1)] - [round(xSize/2)+1 round(ySize/2)+1];
+dMat = [1 0 0; 0 1 0; displacement(1) displacement(2) 1];
+T = maketform('affine', dMat);
+new_mask = imtransform(mask, T, 'XData', [1 xSize], 'YData', [1 ySize]);
+dilate_pixels = round(sqrt(sum(sum(new_mask > 0)))/8);
+new_mask = imdilate(new_mask,strel('disk', dilate_pixels));
+bgmask = 1 - new_mask;
+fillcolor = sum(sum(bgmask .* windowedim1)) / sum(sum(bgmask));
+windowedim1 = new_mask .* windowedim1 + bgmask.*fillcolor;
+
+
+%% Second  correlation block to find fine rotation angle
+% calculate just the slice of the polar transform that is needed:
+wspim0 = polTransformFast(fftshift(abs(fft2(maskedim0))), [1 xSize/2], [20 64]);
+wspim1 = polTransformFast(fftshift(abs(fft2(windowedim1))), [1 xSize/2],  [20 64]);
+% wspim0 = polTransformFast(fftshift(abs(fft2(imresize(maskedim0, [min(size(maskedim0)) min(size(maskedim0))])))), [1 xSize/2], [20 64]);
+% wspim1 = polTransformFast(fftshift(abs(fft2(imresize(windowedim1, [min(size(windowedim1)) min(size(windowedim1))])))), [1 xSize/2],  [20 64]);
+% calculate cross-correlation
+product = fft2(wspim1) .* conj(fft2(ifftshift(wspim0)));
+correlation = real(ifft2(product));
+
+corr_mask = zeros(size(correlation));
+N = size(correlation,2);
+corr_mask(:,(round(N/2) + round((-N/10):(N/10)))) = 1;
+correlation = correlation.*corr_mask;
+
+thresh3 = max(max(correlation));
+[peakr, peakc] = find(correlation == thresh3);
+% centroidA = peakc(1);
+%%%%%%%%%%%cyrus%%%%%%%%%%%%%%%%%
+searchWindow = correlation((peakr-5):(peakr+5),(peakc-5):(peakc+5));
+
+if displayGraphics
+  figure(15); imshow(searchWindow, []);
+end
+
+thresh4 = mean2(searchWindow) + 1 * std2(searchWindow);
+[threshR, threshC] = find(searchWindow > thresh4);
+numThresh = size(threshR, 1);
+if numThresh < 1
+  error('peak centroid calculation failed');
+end
+threshI = zeros(size(threshR));
+for m = 1:numThresh
+%   threshI(m) = searchWindow(threshR(m), threshC(m));
+  threshI(m) = searchWindow(threshR(m), threshC(m)) - thresh4;
+end
+centroidR = sum(threshR .* threshI) / sum(threshI);
+centroidC = sum(threshC .* threshI) / sum(threshI);
+centroidA = (centroidC - 6) + peakc;
+%%%%%%%%%%%cyrus%%%%%%%%%%%%%%%%%
+rotAngle = (centroidA - round(xSize/4)-1) * ((2 * pi) / (xSize));
+
+% now rotate im0 by rotAngle around center for translation calculation
+T = maketform('affine', [1 0 0; 0 1 0; -center(1) (center(2) - ySize) 1] * ...
+                        [cos(rotAngle) sin(rotAngle) 0; ...
+                         -sin(rotAngle) cos(rotAngle) 0; 0 0 1] * ...
+                        [1 0 0; 0 1 0; center(1) (ySize - center(2)) 1]);
+maskedRotatedim0 = flipud(imtransform(flipud(maskedim0), T, 'bicubic', ...
+                         'XData', [1 xSize], 'YData', [1 ySize]));
+
+
+
+
+%% Third  correlation block to find fine translation index
+lowpassF = bandpassF;
+% calculate cross-correlation
+product = (fft2(windowedim1) .* lowpassF) .* ...
+          conj(fft2(ifftshift(maskedRotatedim0)) .* lowpassF);
+correlation = real(ifft2(product));
+thresh3 = max(max(correlation));
+[peakr, peakc] = find(correlation == thresh3);
+displacement = [peakc(1), peakr(1)] - [round(xSize/2)+1 round(ySize/2)+1];
+
+if ((center(1) + displacement(1)) > xSize)
+  displacement(1) = displacement(1) - xSize;
+elseif ((center(1) + displacement(1)) < 1)
+  displacement(1) = displacement(1) + xSize;
+end
+if ((center(2) + displacement(2)) > ySize)
+  displacement(2) = displacement(2) - ySize;
+elseif ((center(2) + displacement(2)) < 1)
+  displacement(2) = displacement(2) + ySize;
+end
+
+if displayGraphics && isfield(curFigData.extra_data_axes, 'Tracking_result')
+  rotatedim0 = flipud(imtransform(flipud(im0), T, 'bicubic', ...
+                          'XData', [1 xSize], 'YData', [1 ySize]));
+
+  set(0,'CurrentFigure',curFigData.figure_handle);
+  set(curFigData.figure_handle,'CurrentAxes', curFigData.extra_data_axes.Tracking_result);
+  cla; 
+  dMat = [1 0 0; 0 1 0; displacement(1) displacement(2) 1];
+  T = maketform('affine', dMat);
+  translatedRotatedim0 = imtransform(rotatedim0, T, ...
+      'XData', [1 xSize], ...
+      'YData', [1 ySize]);
+  
+  overlay = zeros([size(im0, 1), size(im0, 2), 3]);
+  overlay(:, :, 1) = imadjust(im1);
+  overlay(:, :, 2) = imadjust(translatedRotatedim0, stretchlim(im0));
+  title('Overlay of Correlation');
+  figure;imshow(overlay);
+    
+end

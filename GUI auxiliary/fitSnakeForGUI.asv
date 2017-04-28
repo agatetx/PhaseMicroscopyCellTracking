@@ -1,0 +1,137 @@
+function [snake, availTag] = fitSnakeForGUI(snake, alpha, beta, gamma, minSpacing, maxSpacing, extWeight, nu, nv, iterations, availTag, im, handles, curFigData, varargin)
+
+% [snake, availTag] = fitSnake(snake, alpha, beta, gamma, ...
+%                              minSpacing, maxSpacing, ...
+%                              extWeight, nu, nv, ...
+%                              iterations, nextAvailTag, im, ...)
+%
+% Fits a snake to a GVF field
+%
+%   snake           the snake; each row is a vertex, with x component
+%                   in the first column, y in the second column, and
+%                   the unique tag of the vertex in the third column
+%
+%   alpha           tension weighting parameter for the internal
+%                   energy term (EQ 2, Kass et al. 1988)
+%
+%   beta            rigidity weighting parameter for the internal
+%                   energy term (EQ 2, Kass et al. 1988)
+%
+%   gamma           step size for discrete iterative snake updates
+%                   (EQ 17-20, Kass et al. 1988)
+%
+%   minSpacing      minimum distance between adjacent snake vertices;
+%                   if two vertices move within this distance of
+%                   each other, one is deleted
+%
+%   maxSpacing      maximum distance between adjacent snake vertices;
+%                   if two vertices exceed this distance between them,
+%                   a new vertex is inserted between them
+%
+%   extWeight       weighting parameter for the force due to the GVF
+%                   field
+%
+%   nu              matrix containing x components of the normalized
+%                   GVF field
+%
+%   nv              matrix containing y components of the normalized
+%                   GVF field
+%
+%   iterations      number of snake update iterations
+%
+%   nextAvailTag    the next available unique tag (to be assigned to
+%                   the next new vertex that is created, if applicable)
+%
+%   im              the source image
+%
+% Returns:
+%
+%   snake           the updated snake after fitting
+%
+%   availTag        the updated next available unique tag after any
+%                   new vertices were created
+%
+% options
+%
+%   displayGraphics ...
+%
+%   ...
+%
+% Cyrus A Wilson  March 2003    updated February 2005
+
+if exist('varargin', 'var')
+  assignVars(varargin); %parse optional variables
+end
+
+% set defaults
+if ~exist('displayGraphics', 'var')
+  displayGraphics = 0;
+end
+if ~exist('availTag', 'var')
+  availTag = size(snake, 1) + 1;
+end
+if ~exist('im', 'var')
+  im = zeros(size(nu));
+end
+
+% uncomment below to save animation of snake-fitting
+%workImages = 'work_img/';
+
+[maxY, maxX] = size(im);
+
+  
+  set(curFigData.figure_handle,'CurrentAxes', curFigData.axes_handle); cla reset;
+  imshow(im, []); title('fitting snake');
+  hold on;
+
+
+for m = 1:iterations
+    
+check_user_abort(handles);
+  % check if snake is too close to frame boundaries
+  if (min(min(snake(:, 1:2))) <= 1) || (max(snake(:, 1)) >= maxX) ...
+      || (max(snake(:, 2)) >= maxY)
+    return;
+  end
+  
+  % create or delete vertices, as necessary, so inter-vertex spacing
+  % of snake is within desired minimum and maximum
+  [snake, availTag] = redistribute(snake, minSpacing, maxSpacing, availTag);
+    
+  % calculation of internal energy term requires at least 5 vertices,
+  % check if snake has collapsed
+  if size(snake, 1) < 5
+      return;
+  end
+        
+  % since my implementation might change the number of points
+  % in the snake with each iteration, I must recalculate the A
+  % matrix (EQs 14-20, Kass et al. 1988) each time as well
+  A = calcAmatrix(alpha, beta, size(snake, 1));
+  Ainv = inv(A + (gamma * eye(size(A))));
+
+  % update snake by adding partial derivatives (EQs 19-20, Kass et
+  % al. 1988)
+  snake(:,1) = Ainv * ...
+               (snake(:,1) + extWeight * interp2(nu, snake(:,1), snake(:,2)));
+  snake(:,2) = Ainv * ...
+               (snake(:,2) + extWeight * interp2(nv, snake(:,1), snake(:,2)));
+
+  % plot current snake, and save image if desired
+
+    points = [snake(:, 1:2); snake(1, 1:2)];
+    figure
+    set(curFigData.figure_handle,'CurrentAxes', curFigData.axes_handle); 
+    plot(points(:, 1), points(:, 2));  drawnow;
+    title(['progress: ' num2str(m) '/' num2str(iterations)]);
+    
+end
+
+hold off;
+
+points = [snake(:, 1:2); snake(1, 1:2)];
+
+set(curFigData.figure_handle,'CurrentAxes', curFigData.axes_handle); cla reset;
+imshow(im, []);
+hold on; plot(points(:, 1), points(:, 2)); hold off;
+title('snake after fitting'); drawnow;

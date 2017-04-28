@@ -1,0 +1,17 @@
+function curFigData = UpdateFigData(handles, curFigData, tracking)
+curFigData.figure_handle = gcf;
+
+if(nargin > 2)
+    if(tracking)
+        curFigData.axes_handle = handles.plotTracking;
+    else
+        curFigData.axes_handle = handles.plotSegmentationTest;
+    end
+end
+
+curFigData.extra_data_axis = [];
+
+str = get(handles.popupmenuED1, 'String')
+curFigData.extra_data_axis = setfield(curFigData.extra_data_axis, str, handles.axisED1);
+
+string

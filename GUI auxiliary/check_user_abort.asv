@@ -1,0 +1,9 @@
+function res = check_user_abort(handles)
+
+if(strcmp(get(handles.pushbuttonAbortTracking,'String'),'Aborting...'))
+    ME = MException('UserHitAbort:ewr', ...
+        'User hit the abort button');
+    throw(ME);
+else 
+    return;
+end

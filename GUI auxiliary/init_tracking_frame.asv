@@ -1,0 +1,10 @@
+function init_tracking_frame(hObject, handles)
+
+initialFrame =handles.global.initialFrame;
+
+set(handles.textTrackingStatus,'String', 'Idle');
+set(handles.textFrameID,'String', num2str(initialFrame));
+img = load_image(handles, initialFrame);
+set(handles.figureMain,'CurrentAxes', handles.plotTracking)
+cla;
+imshow(img);

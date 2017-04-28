@@ -1,0 +1,45 @@
+function [edgePoints, edgeScan] = getUserEdgeForGUI(im)
+% 
+% [edgePoints, edgeScan] = getUserEdgeForGUI(im)
+% 
+% Adjusted from Cyrus's code to interact with GUI.
+% Presents the user with an image, and has them select the edge of
+% interest by drawing a line across it--adding endpoints with the
+% mouse (left clicks add new vertices, each connected to the previous 
+% one; other clicks or key presses end the process
+% 
+% input:
+%     im - image to present user    
+%                        
+% output:
+%     edgePoints - endpoints of line across edge
+%     edgeScan - sparse logical matrix that is 1 along the pixels of
+%                             line across edge
+% 
+                            
+
+scim = imadjust(im, stretchlim(im, 0));
+
+CLim = stretchlim(scim, [0 0.98])';
+
+imshow(scim, CLim); title('Specify desired edge');
+axis image;
+
+[x, y] = getline;
+
+edgePoints = [x, y];
+numPoints = size(edgePoints, 1);
+
+hold on;
+plot(edgePoints(:, 1), edgePoints(:, 2));
+hold off; drawnow;
+CLim = get(gca, 'CLim');
+
+% rasterize line to get edgeScan
+blankSlate = zeros(size(im));
+
+uncropped = frame2im(getframe);
+cropped = uncropped(1:(size(uncropped, 1) - 1), ...
+                    1:(size(uncropped, 2) - 1), 1);
+
+edgeScan = sparse(cropped > 127);

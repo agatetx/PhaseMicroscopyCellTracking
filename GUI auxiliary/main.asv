@@ -1,0 +1,24 @@
+
+ if exist('autosave.fig','file') % Open existing GUI workspace
+     % Construct a questdlg with three options
+choice = questdlg('What workspace would you like to load?', ...
+ 'Last wor', ...
+ 'Ice cream','Cake','No thank you','No thank you');
+% Handle response
+switch choice
+    case 'Ice cream'
+        disp([choice ' coming right up.'])
+        dessert = 1;
+        break   
+    case 'Cake'
+        disp([choice ' coming right up.'])
+        dessert = 2;
+       break
+    case 'No thank you'
+        disp('I''ll bring you your check.')
+        dessert = 0;
+en
+    hgload('autosave.fig');
+ else % Initilize new GUI workspace
+     GUIRESTORED()
+ end
